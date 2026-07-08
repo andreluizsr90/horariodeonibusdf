@@ -18,9 +18,18 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Variáveis públicas (NEXT_PUBLIC_*) são "assadas" no build. Podem ser
-# sobrescritas via build args no CI, se necessário.
-ENV NEXT_TELEMETRY_DISABLED=1
+# Variáveis públicas (NEXT_PUBLIC_*) são "inlined" no bundle DURANTE o build e
+# ficam gravadas nas páginas estáticas (metadataBase → canonical/OG, GA, AdSense).
+# Por isso PRECISAM existir aqui: passá-las só no runtime NÃO corrige o canonical
+# das páginas pré-renderizadas (que sairiam com http://localhost:3000).
+# As variáveis PRIVADAS da API (API_*) NÃO entram no build — são lidas só em runtime.
+ARG NEXT_PUBLIC_SITE_URL
+ARG NEXT_PUBLIC_GA_ID
+ARG NEXT_PUBLIC_ADSENSE_CLIENT
+ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL} \
+    NEXT_PUBLIC_GA_ID=${NEXT_PUBLIC_GA_ID} \
+    NEXT_PUBLIC_ADSENSE_CLIENT=${NEXT_PUBLIC_ADSENSE_CLIENT} \
+    NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # ---- Stage 3: runtime ----------------------------------------------------

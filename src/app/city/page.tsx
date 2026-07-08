@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/seo";
 import { CidadesView } from "@/components/views/CidadesView";
 
-export const revalidate = 3600;
+// Dinâmica por requisição — ver nota em src/app/page.tsx. Evita que o build
+// (sem credenciais da API) pré-renderize esta página com o estado de erro.
+export const dynamic = "force-dynamic";
 
 // Rota ALIAS de /cidades — renderiza o MESMO conteúdo, mas o canonical
 // aponta para a rota principal (/cidades) para consolidar o SEO.

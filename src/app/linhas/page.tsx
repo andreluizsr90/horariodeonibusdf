@@ -5,7 +5,9 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { LinhasExplorer } from "@/components/ui/LinhasExplorer";
 import { ApiErrorNotice } from "@/components/ui/ApiErrorNotice";
 
-export const revalidate = 900;
+// Dinâmica por requisição — ver nota em src/app/page.tsx. Evita que o build
+// (sem credenciais da API) pré-renderize esta página com o estado de erro.
+export const dynamic = "force-dynamic";
 
 // Rota de TODAS as linhas. Por decisão de SEO do projeto, o canonical
 // aponta para a HOME ("/"), tratada como a página raiz de linhas.

@@ -3,6 +3,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # NEXT_PUBLIC_* são inlined no build → precisam ser build args (senão as
+      # páginas estáticas assam canonical/OG com http://localhost:3000).
+      # O Compose lê estes valores do arquivo .env do diretório automaticamente.
+      args:
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+        NEXT_PUBLIC_GA_ID: ${NEXT_PUBLIC_GA_ID:-}
+        NEXT_PUBLIC_ADSENSE_CLIENT: ${NEXT_PUBLIC_ADSENSE_CLIENT:-}
     image: horariodeonibusdf:latest
     container_name: horariodeonibusdf
     restart: unless-stopped

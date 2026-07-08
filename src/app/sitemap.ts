@@ -3,8 +3,10 @@ import { config } from "@/lib/config";
 import { absoluteUrl } from "@/lib/seo";
 import { busService } from "@/application/services/bus-service";
 
-// Revalida o sitemap periodicamente (dados dinâmicos de linhas/cidades).
-export const revalidate = 3600;
+// Dinâmico por requisição — ver nota em src/app/page.tsx. No build (sem
+// credenciais da API) o sitemap sairia sem as URLs de linhas/cidades; gerá-lo
+// em runtime garante o índice completo.
+export const dynamic = "force-dynamic";
 
 /**
  * Sitemap dinâmico. Inclui SOMENTE as rotas principais/canônicas — as aliases

@@ -6,9 +6,13 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { LinhasExplorer } from "@/components/ui/LinhasExplorer";
 import { ApiErrorNotice } from "@/components/ui/ApiErrorNotice";
 
-// Revalidação ISR: a página se recompõe periodicamente, recuperando-se
-// automaticamente caso a API esteja indisponível no momento do build.
-export const revalidate = 900;
+// Renderização dinâmica (por requisição). Necessário porque a API é
+// autenticada em runtime (o build da imagem NÃO tem credenciais, por design):
+// sem `force-dynamic`, o Next pré-renderiza esta página no build, onde a API
+// está indisponível, "assando" o estado de erro no HTML estático. Dinâmica,
+// ela sempre busca dados ao vivo; o cache de dados do fetch (revalidate no
+// http-client) segue limitando as chamadas à API externa.
+export const dynamic = "force-dynamic";
 
 // A home é a rota canônica para "/" e também para "/linhas".
 export const metadata: Metadata = buildMetadata({
