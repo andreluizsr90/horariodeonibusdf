@@ -14,8 +14,9 @@ import "leaflet/dist/leaflet.css";
  *  - A cada ciclo, SOMENTE as posições dos marcadores são atualizadas
  *    (reaproveitando as instâncias de Marker via setLatLng).
  *
- * Ciclo (polling de 10s): contador chega a 0 → GET /api/gps/linha/{numero}
- *  → atualiza/insere/remove marcadores → contador reinicia em 10.
+ * Ciclo (polling de 10s): contador chega a 0 → GET direto ao feed do DFTrans
+ *  (`/gps/linha/{numero}/geo/recent`) → normaliza o GeoJSON → atualiza/insere/
+ *  remove marcadores → contador reinicia em 10.
  *
  * Leaflet é importado dinamicamente (usa `window`); o mapa é descartado
  * (map.remove()) e os timers limpos no unmount, evitando memory leaks.
@@ -28,11 +29,50 @@ const BRASILIA: [number, number] = [-15.7934, -47.8822];
 
 type Status = "carregando" | "ok" | "vazio" | "erro";
 
-interface Resposta {
-  veiculos?: VeiculoLinha[];
-  erro?: boolean;
-  atualizadoEm?: number;
-  mock?: boolean;
+/** Estrutura crua do feed de GPS do DFTrans (GeoJSON FeatureCollection). */
+interface DftransFeature {
+  geometry?: { coordinates?: [number, number]; type?: string };
+  properties?: {
+    numero?: string | number;
+    velocidade?: string | number;
+    horario?: number;
+    linha?: string;
+  };
+}
+interface DftransFeatureCollection {
+  features?: DftransFeature[];
+}
+
+/**
+ * Traduz o GeoJSON do DFTrans para VeiculoLinha[]: inverte `coordinates`
+ * [lng, lat] → [lat, lng] (GeoJSON usa longitude primeiro; o Leaflet espera
+ * latitude primeiro), valida os intervalos e descarta pontos inválidos.
+ * `properties.numero` é o prefixo do VEÍCULO (chave do marcador).
+ */
+function normalizarFeed(fc: DftransFeatureCollection): VeiculoLinha[] {
+  const out: VeiculoLinha[] = [];
+  for (const f of fc?.features ?? []) {
+    const coords = f.geometry?.coordinates;
+    if (!Array.isArray(coords) || coords.length < 2) continue;
+    const lng = Number(coords[0]);
+    const lat = Number(coords[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+
+    const p = f.properties ?? {};
+    const vel = p.velocidade != null ? Number(p.velocidade) : NaN;
+    out.push({
+      id:
+        p.numero != null
+          ? String(p.numero)
+          : `${lat.toFixed(5)},${lng.toFixed(5)}`,
+      lat,
+      lng,
+      velocidade: Number.isFinite(vel) ? vel : undefined,
+      horario: typeof p.horario === "number" ? p.horario : undefined,
+    });
+  }
+  return out;
 }
 
 const COR_NEUTRO = "#64748b"; // slate-500 (sem rota para classificar o veículo)
@@ -190,17 +230,20 @@ export function MapaLocalizacao({
 
     async function buscar() {
       try {
-        const res = await fetch(`/api/gps/linha/${encodeURIComponent(numero)}`, {
-          cache: "no-store",
-        });
-        const data = (await res.json()) as Resposta;
+        // Chamada DIRETA ao feed do DFTrans (sem proxy/encapsulamento).
+        const res = await fetch(
+          `https://www.sistemas.dftrans.df.gov.br/gps/linha/${encodeURIComponent(numero)}/geo/recent`,
+          { cache: "no-store" },
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const fc = (await res.json()) as DftransFeatureCollection;
         if (!vivoRef.current) return;
 
-        const veiculos = data.veiculos ?? [];
+        const veiculos = normalizarFeed(fc);
         atualizarMarcadores(veiculos);
         setTotal(veiculos.length);
-        setAtualizadoEm(data.atualizadoEm ?? null);
-        setStatus(data.erro ? "erro" : veiculos.length > 0 ? "ok" : "vazio");
+        setAtualizadoEm(Date.now());
+        setStatus(veiculos.length > 0 ? "ok" : "vazio");
       } catch {
         if (vivoRef.current) setStatus("erro");
       }
