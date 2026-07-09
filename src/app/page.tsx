@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 // A home é a rota canônica para "/" e também para "/linhas".
 export const metadata: Metadata = buildMetadata({
-  title: config.site.name,
+  title: "Horários de Ônibus do DF e Entorno",
   description: config.site.description,
   canonicalPath: "/",
 });

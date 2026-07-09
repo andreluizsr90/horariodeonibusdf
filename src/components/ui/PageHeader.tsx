@@ -1,9 +1,26 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { absoluteUrl } from "@/lib/seo";
+import { JsonLd } from "@/components/seo/JsonLd";
 
 interface Crumb {
   label: string;
   href?: string;
+}
+
+/** Monta o schema BreadcrumbList a partir da trilha de navegação. */
+function breadcrumbLd(crumbs: Crumb[]) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: crumbs.map((c, i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      name: c.label,
+      // O item (URL) é opcional no último nível (página atual).
+      ...(c.href ? { item: absoluteUrl(c.href) } : {}),
+    })),
+  };
 }
 
 interface PageHeaderProps {
@@ -22,6 +39,9 @@ export function PageHeader({
 }: PageHeaderProps) {
   return (
     <div className="border-b border-slate-200 bg-gradient-to-b from-brand-50 to-slate-50">
+      {breadcrumbs && breadcrumbs.length > 0 && (
+        <JsonLd data={breadcrumbLd(breadcrumbs)} />
+      )}
       <div className="container-page py-8 md:py-10">
         {breadcrumbs && breadcrumbs.length > 0 && (
           <nav aria-label="Trilha de navegação" className="mb-3">

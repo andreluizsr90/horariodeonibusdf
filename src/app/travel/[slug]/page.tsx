@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { buildMetadata } from "@/lib/seo";
+import { buildMetadata, tituloLinha } from "@/lib/seo";
 import { busService } from "@/application/services/bus-service";
 import { LinhaDetalheView } from "@/components/views/LinhaDetalheView";
 
@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     });
   }
 
-  const titulo = `${linha.numero ? `Linha ${linha.numero} — ` : ""}${linha.nome}`;
+  const titulo = tituloLinha(linha.numero, linha.nome);
 
   // Rota ALIAS de /linhas/[slug] — canonical aponta para a rota principal.
   return buildMetadata({

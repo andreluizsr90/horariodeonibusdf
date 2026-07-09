@@ -5,7 +5,29 @@ import { config } from "@/lib/config";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { AdSense } from "@/components/analytics/AdSense";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { absoluteUrl } from "@/lib/seo";
 import "./globals.css";
+
+// Dados estruturados globais (schema.org) — ajudam o Google a entender a marca
+// e podem habilitar sitelinks/knowledge panel.
+const organizationLd = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: config.site.name,
+  url: config.site.url,
+  logo: absoluteUrl("/logo-horariodeonibusdf.png"),
+  description: config.site.description,
+};
+
+const websiteLd = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: config.site.name,
+  url: config.site.url,
+  inLanguage: "pt-BR",
+  description: config.site.description,
+};
 
 const inter = Inter({
   subsets: ["latin"],
@@ -40,6 +62,9 @@ export default function RootLayout({
       <head>
         {/* Google AdSense (Auto Ads) — não bloqueia renderização. */}
         <AdSense />
+        {/* Dados estruturados globais. */}
+        <JsonLd data={organizationLd} />
+        <JsonLd data={websiteLd} />
       </head>
       <body className="flex min-h-screen flex-col font-sans">
         {/* Link de pular para o conteúdo (acessibilidade). */}

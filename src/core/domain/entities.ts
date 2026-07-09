@@ -67,6 +67,22 @@ export interface SentidoLinha {
   horarios: Horario[];
 }
 
+/**
+ * Posição em tempo real de um veículo de uma linha (feed de GPS do DFTrans).
+ * As coordenadas já vêm no formato do Leaflet ([lat, lng]) — a inversão do
+ * GeoJSON ([lng, lat]) é feita na borda (route handler /api/gps).
+ */
+export interface VeiculoLinha {
+  /** Prefixo/identificador do veículo (properties.numero do feed). Chave do pin. */
+  id: string;
+  lat: number;
+  lng: number;
+  /** Velocidade em km/h, quando informada. */
+  velocidade?: number;
+  /** Momento da posição (epoch ms). */
+  horario?: number;
+}
+
 export interface LinhaDetalhe extends Linha {
   /** Sentidos da linha (apenas os que possuem itinerário ou horários). */
   sentidos: SentidoLinha[];
@@ -82,4 +98,10 @@ export interface LinhaDetalhe extends Linha {
    * quando a API fornece o campo `percurso` com coordenadas válidas.
    */
   percurso?: Percurso;
+  /**
+   * Indica que a linha pertence ao sistema da Semob/DFTrans (a API traz o bloco
+   * `semob_extra`). SOMENTE estas linhas têm rastreamento por GPS em tempo real
+   * — linhas interestaduais (ANTT) do Entorno não possuem esse recurso.
+   */
+  semob?: boolean;
 }

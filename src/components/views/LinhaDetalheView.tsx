@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { busService } from "@/application/services/bus-service";
+import { tituloLinha } from "@/lib/seo";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LinhaDetalheContent } from "@/components/ui/LinhaDetalheContent";
 import { MapaTrajeto } from "@/components/ui/MapaTrajeto";
@@ -28,7 +29,7 @@ export async function LinhaDetalheView({ slug }: { slug: string }) {
   return (
     <>
       <PageHeader
-        title={`${linha.numero ? `Linha ${linha.numero} — ` : ""}${linha.nome}`}
+        title={tituloLinha(linha.numero, linha.nome)}
         description={
           linha.origem || linha.destino
             ? [linha.origem, linha.destino].filter(Boolean).join(" → ")
@@ -56,6 +57,20 @@ export async function LinhaDetalheView({ slug }: { slug: string }) {
             <InfoBadge label="Itinerário" value={`${totalPontos} pontos`} />
           )}
         </dl>
+
+        {/* Rastreamento em tempo real existe apenas para linhas da Semob/DFTrans. */}
+        {linha.semob && (
+          <Link
+            href={`/linhas/${slug}/localizacao`}
+            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700"
+          >
+            <span
+              className="inline-block h-2 w-2 animate-pulse rounded-full bg-white"
+              aria-hidden="true"
+            />
+            Ver ônibus em tempo real
+          </Link>
+        )}
       </PageHeader>
 
       <div className="container-page py-8">

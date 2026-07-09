@@ -104,6 +104,8 @@ interface RawLinhaDetalhe extends RawLinha {
   /** Aliases tolerados para o mesmo dado. */
   trajeto?: RawPercurso;
   rota?: RawPercurso;
+  /** Bloco de dados da Semob/DFTrans; presente só nas linhas desse sistema. */
+  semob_extra?: unknown;
 }
 
 // Rótulos amigáveis para as categorias de dia e sentido da API.
@@ -323,6 +325,9 @@ function mapLinhaDetalhe(raw: RawLinhaDetalhe): LinhaDetalhe {
     distancia: raw.distancia,
     duracao: raw.duracao,
     percurso: mapPercurso(raw),
+    // Só as linhas da Semob/DFTrans trazem o bloco `semob_extra` (objeto) —
+    // é o que habilita o rastreamento por GPS em tempo real.
+    semob: typeof raw.semob_extra === "object" && raw.semob_extra !== null,
   };
 }
 
