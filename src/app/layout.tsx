@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import { config } from "@/lib/config";
@@ -6,6 +6,7 @@ import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { AdSense } from "@/components/analytics/AdSense";
 import { JsonLd } from "@/components/seo/JsonLd";
+import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 import { absoluteUrl } from "@/lib/seo";
 import "./globals.css";
 
@@ -49,9 +50,22 @@ export const metadata: Metadata = {
   applicationName: config.site.name,
   icons: {
     icon: "/logo-icon-horariodeonibusdf.png",
-    apple: "/logo-icon-horariodeonibusdf.png",
+    apple: "/apple-icon.png",
+  },
+  // Habilita o modo "app" no iOS (Adicionar à Tela de Início).
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: config.site.shortName,
   },
   formatDetection: { telephone: false },
+};
+
+// theme-color (barra do navegador/So no modo instalado). No Next 15, cor de
+// tema e viewport ficam no export `viewport`, não em `metadata`.
+export const viewport: Viewport = {
+  themeColor: "#1d63f1",
+  colorScheme: "light",
 };
 
 export default function RootLayout({
@@ -82,6 +96,9 @@ export default function RootLayout({
         </main>
 
         <Footer />
+
+        {/* Registro do Service Worker (PWA / instalação). */}
+        <ServiceWorkerRegister />
 
         {/* Google Analytics 4 — carregado de forma otimizada. */}
         {config.analytics.gaId && (

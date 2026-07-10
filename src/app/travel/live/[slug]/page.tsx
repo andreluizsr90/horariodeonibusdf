@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { buildMetadata } from "@/lib/seo";
+import { buildMetadata, tituloLinha } from "@/lib/seo";
 import { busService } from "@/application/services/bus-service";
 import { LocalizacaoView } from "@/components/views/LocalizacaoView";
 
@@ -22,7 +22,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     });
   }
 
-  const titulo = `${linha.numero ? `Linha ${linha.numero} — ` : ""}${linha.nome}`;
+  const titulo = tituloLinha(linha.numero, linha.nome);
+  // Rota ALIAS de /linhas/[slug]/localizacao — canonical aponta para a principal.
   return buildMetadata({
     title: `Localização em tempo real — ${titulo}`,
     description: `Acompanhe no mapa, em tempo real, a posição dos ônibus da ${titulo}.`,
@@ -32,7 +33,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   });
 }
 
-export default async function LocalizacaoPage({ params }: Props) {
+export default async function TravelLiveAliasPage({ params }: Props) {
   const { slug } = await params;
   return <LocalizacaoView slug={slug} />;
 }
