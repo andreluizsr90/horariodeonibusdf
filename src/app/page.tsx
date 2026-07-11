@@ -4,6 +4,7 @@ import { buildMetadata } from "@/lib/seo";
 import { config } from "@/lib/config";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LinhasExplorer } from "@/components/ui/LinhasExplorer";
+import { FavoritesSection } from "@/components/ui/FavoritesSection";
 import { ApiErrorNotice } from "@/components/ui/ApiErrorNotice";
 
 // Renderização dinâmica (por requisição). Necessário porque a API é
@@ -45,7 +46,11 @@ export default async function HomePage() {
 
       <section className="container-page py-8">
         {linhas ? (
-          <LinhasExplorer linhas={embaralhadas} limiteInicial={50} />
+          <>
+            {/* Prioridade visual: favoritos no topo (aparece só se houver). */}
+            <FavoritesSection linhas={linhas} />
+            <LinhasExplorer linhas={embaralhadas} limiteInicial={50} />
+          </>
         ) : (
           <ApiErrorNotice />
         )}

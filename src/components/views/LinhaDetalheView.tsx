@@ -5,6 +5,7 @@ import { tituloLinha } from "@/lib/seo";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LinhaDetalheContent } from "@/components/ui/LinhaDetalheContent";
 import { MapaTrajeto } from "@/components/ui/MapaTrajeto";
+import { FavoriteToggle } from "@/components/ui/FavoriteToggle";
 
 /**
  * View compartilhada dos detalhes de uma linha (horários, itinerário e infos).
@@ -58,19 +59,23 @@ export async function LinhaDetalheView({ slug }: { slug: string }) {
           )}
         </dl>
 
-        {/* Rastreamento em tempo real existe apenas para linhas da Semob/DFTrans. */}
-        {linha.semob && (
-          <Link
-            href={`/linhas/${slug}/localizacao`}
-            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700"
-          >
-            <span
-              className="inline-block h-2 w-2 animate-pulse rounded-full bg-white"
-              aria-hidden="true"
-            />
-            Ver ônibus em tempo real
-          </Link>
-        )}
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <FavoriteToggle slug={slug} numero={linha.numero} showLabel />
+
+          {/* Rastreamento em tempo real existe apenas para linhas da Semob/DFTrans. */}
+          {linha.semob && (
+            <Link
+              href={`/linhas/${slug}/localizacao`}
+              className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700"
+            >
+              <span
+                className="inline-block h-2 w-2 animate-pulse rounded-full bg-white"
+                aria-hidden="true"
+              />
+              Ver ônibus em tempo real
+            </Link>
+          )}
+        </div>
       </PageHeader>
 
       <div className="container-page py-8">

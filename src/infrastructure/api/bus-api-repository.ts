@@ -145,6 +145,16 @@ function str(value: unknown, fallback = ""): string {
   return String(value);
 }
 
+/**
+ * Heurística de Semob a partir do slug (usada na LISTAGEM, que não traz o bloco
+ * `semob_extra`). As linhas interestaduais do Entorno têm slug prefixado com
+ * "ANTT-"; todas as demais (DFTrans) são Semob. No DETALHE, o valor é confirmado
+ * pela presença de `semob_extra` (ver mapLinhaDetalhe), que tem prioridade.
+ */
+function ehSemobSlug(slug: string): boolean {
+  return !/^antt[-_]/i.test(slug);
+}
+
 // ---- Mapeadores ------------------------------------------------------------
 
 function mapCidade(raw: RawCidade): Cidade {
@@ -178,6 +188,7 @@ function mapLinha(raw: RawLinha): Linha {
     cidadeSlug: raw.cidadeSlug ?? raw.cidade_slug,
     cidadeNome: raw.cidade_nome ?? raw.cidade ?? raw.estado,
     operadora: raw.operadora ?? raw.empresa,
+    semob: ehSemobSlug(slug),
   };
 }
 

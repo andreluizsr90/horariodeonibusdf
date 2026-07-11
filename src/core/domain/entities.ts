@@ -28,6 +28,13 @@ export interface Linha {
   cidadeNome?: string;
   /** Operadora/empresa responsável, quando disponível. */
   operadora?: string;
+  /**
+   * Indica que a linha é do sistema Semob/DFTrans — as únicas com rastreamento
+   * por GPS em tempo real. Na LISTAGEM é inferido do padrão do slug (linhas
+   * ANTT do Entorno não são Semob); no DETALHE (LinhaDetalhe) é confirmado pela
+   * presença do bloco `semob_extra`, que sobrescreve este valor.
+   */
+  semob?: boolean;
 }
 
 export interface Horario {
