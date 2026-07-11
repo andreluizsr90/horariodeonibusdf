@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { LinhaDetalheContent } from "@/components/ui/LinhaDetalheContent";
 import { MapaTrajeto } from "@/components/ui/MapaTrajeto";
 import { FavoriteToggle } from "@/components/ui/FavoriteToggle";
+import { AdBanner } from "@/components/analytics/AdBanner";
 
 /**
  * View compartilhada dos detalhes de uma linha (horários, itinerário e infos).
@@ -80,6 +81,9 @@ export async function LinhaDetalheView({ slug }: { slug: string }) {
 
       <div className="container-page py-8">
         <LinhaDetalheContent sentidos={linha.sentidos} />
+
+        {/* Banner de anúncio — antes do mapa do trajeto. */}
+        <AdBanner slot="5989010611" className="my-8" />
 
         {linha.percurso && (
           // `key` por slug: força a remontagem (e o descarte da instância
