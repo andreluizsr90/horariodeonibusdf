@@ -12,11 +12,6 @@ import { AdBanner } from "@/components/analytics/AdBanner";
 export default function Template({ children }: { children: ReactNode }) {
   return (
     <>
-      {/* Banner de topo — abaixo do cabeçalho. */}
-      <div className="container-page pt-4">
-        <AdBanner slot="6961870453" />
-      </div>
-
       {children}
 
       {/* Banner de rodapé — último conteúdo, logo antes do <Footer/>. */}
