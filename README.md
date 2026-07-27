@@ -1,103 +1,107 @@
-# Horário de Ônibus DF
+# Horário de Ônibus DF — Trongate (PHP)
 
 Portal de consulta de horários, linhas e itinerários de ônibus do Distrito
-Federal e Entorno. Construído com **Next.js (App Router)**, **React**,
-**TypeScript** e **Tailwind CSS**, seguindo princípios de **Clean Architecture**
-para separar a camada de UI da lógica de consumo da API.
+Federal e Entorno. Construído sobre o
+[Trongate Framework](https://github.com/trongate/trongate-framework) (PHP MVC).
 
-## Arquitetura (Clean Architecture)
+> Esta é a versão PHP/Trongate. A versão anterior em Next.js/React permanece
+> disponível no histórico do Git (branch `main`).
 
-O código é organizado em camadas com dependências apontando sempre para o núcleo:
+## Arquitetura
 
 ```
-src/
-├── core/                      # Núcleo — sem dependências de framework
-│   ├── domain/entities.ts     # Entidades: Cidade, Linha, LinhaDetalhe, Horario
-│   └── ports/bus-repository.ts# Porta (interface) que a aplicação consome
-│
-├── application/               # Casos de uso
-│   └── services/bus-service.ts
-│
-├── infrastructure/            # Detalhes técnicos (implementam as portas)
-│   └── api/
-│       ├── token-manager.ts   # Cache do token em memória + renovação
-│       ├── http-client.ts     # GET autenticado + retry em 401
-│       └── bus-api-repository.ts # Implementa BusRepository (HTTP + mapeamento)
-│
-├── components/                # Camada de UI (React)
-│   ├── layout/                # Header, Footer, navegação
-│   ├── ui/                    # Cards, busca, estados
-│   ├── views/                 # Views compartilhadas entre rotas principais/alias
-│   └── analytics/             # AdSense
-│
-├── lib/                       # Config, SEO/canonical, slug
-└── app/                       # Rotas (App Router) + metadata/SEO
+config/
+├── config.php          # constantes (BASE_URL, SITE_URL, API_*, GA/AdSense)
+├── env.php             # leitor do .env (compartilhado com a versão antiga)
+├── custom_routing.php  # rotas principais + aliases
+└── cacert.pem          # CA bundle (SSL do cURL em qualquer ambiente)
+
+modules/
+├── busapi/             # cliente da API externa (auth+cache, retry 401, DTOs)
+├── home/               # página inicial
+├── linhas/             # listagem, detalhe e localização em tempo real (GPS)
+├── cidades/            # listagem de cidades e linhas por cidade
+├── tarifas/            # tarifas DF e Entorno (+ dados estáticos)
+├── achados/            # achados e perdidos (+ dados estáticos)
+├── seo/                # sitemap.xml e robots.txt dinâmicos
+└── templates/views/public.php   # layout global (header, anúncios, footer, SEO)
+
+public/
+├── assets/js/site.js   # favoritos, busca, itinerário, mapas (JS puro)
+├── assets/img/         # logos
+└── router.php          # front controller p/ o servidor embutido do PHP (dev)
 ```
 
-**Regra de dependência:** `app` → `components` → `application` → `core`.
-A `infrastructure` implementa as interfaces de `core` e é injetada na
-`application`. A UI nunca fala HTTP diretamente.
+**Fluxo:** rota → controller (`modules/X/X.php`) → `$this->templates->public($data)`
+→ layout global renderiza a view (`modules/X/views/*.php`).
 
-## Autenticação inteligente com a API
+Os dados vêm 100% da API externa — **não há banco de dados** (o ORM do
+Trongate não é usado).
 
-O fluxo fica isolado em `infrastructure/api`:
+## Rotas e canonical
 
-1. **Cache em memória** do token (singleton por processo do servidor).
-2. **Renovação automática:** antes de cada chamada, se o token expira em menos
-   de 1 minuto (`API_TOKEN_REFRESH_SKEW_SECONDS`), reautentica.
-3. **Retry em 401:** se uma requisição retornar `401`, força **uma**
-   reautenticação e repete a chamada original.
-4. **Controle de concorrência:** requisições simultâneas compartilham a mesma
-   promessa de autenticação (evita "tempestade" de logins).
+Rotas *alias* renderizam o mesmo conteúdo da principal, mas o
+`<link rel="canonical">` sempre aponta para a **rota principal**:
 
-Todas as chamadas a `/api/onibus/*` recebem o header `Authorization: Bearer {token}`.
+| Principal (canonical)            | Alias                                            |
+| -------------------------------- | ------------------------------------------------ |
+| `/`                              | `/linhas` (canonical → `/`)                      |
+| `/cidades`                       | `/city`                                          |
+| `/cidades/{slug}`                | `/city/{slug}`                                   |
+| `/linhas/{slug}`                 | `/travel/{slug}`                                 |
+| `/linhas/{slug}/localizacao`     | `/linha/{slug}/localizacao`, `/travel/live/{slug}` |
+| `/tarifas/distrito-federal`      | `/pages/tarifas-distrito-federal`                |
+| `/tarifas/cidades-entorno`       | `/pages/tarifas-entorno`                         |
+| `/achados-e-perdidos`            | `/pages/achados-e-perdidos`                      |
 
-## SEO e Canonical
+Há ainda `/sitemap.xml` (somente URLs canônicas) e `/robots.txt` dinâmicos.
 
-Cada página define seu `<link rel="canonical">` via **Metadata API**
-(`alternates.canonical`). Rotas **alias** renderizam o mesmo conteúdo da
-principal, mas apontam canonicamente para ela:
+## Integração com a API
 
-| Rota principal (canonical)      | Alias                               |
-| ------------------------------- | ----------------------------------- |
-| `/`                             | `/linhas` (canonical → `/`)         |
-| `/cidades`                      | `/city`                             |
-| `/cidades/{slug}`               | `/city/{slug}`                      |
-| `/linhas/{slug}`                | `/travel/{slug}`                    |
-| `/tarifas/distrito-federal`     | `/pages/tarifas-distrito-federal`   |
-| `/tarifas/cidades-entorno`      | `/pages/tarifas-entorno`            |
-| `/achados-e-perdidos`           | `/pages/achados-e-perdidos`         |
+Isolada em `modules/busapi/Busapi.php`:
 
-Há também `sitemap.xml` (só rotas canônicas) e `robots.txt` dinâmicos.
+1. **Cache do token em arquivo** (compartilhado entre requisições PHP).
+2. **Renovação automática** quando falta menos que `API_TOKEN_REFRESH_SKEW_SECONDS`.
+3. **Retry único em 401** — reautentica e repete a chamada.
+4. `Authorization: Bearer {token}` em todas as chamadas `/api/onibus/*`.
 
-## Configuração
+## Configuração (`.env` na raiz)
 
-Copie `.env.example` para `.env.local` (desenvolvimento) ou `.env` (Docker) e
-preencha:
-
-| Variável                         | Descrição                                   |
-| -------------------------------- | ------------------------------------------- |
-| `NEXT_PUBLIC_SITE_URL`           | URL pública canônica (sem barra final)      |
-| `API_BASE_URL`                   | URL base da API externa                     |
-| `API_EMAIL` / `API_PASSWORD`     | Credenciais do endpoint `POST /api/auth`    |
-| `API_TOKEN_REFRESH_SKEW_SECONDS` | Antecedência de renovação (padrão 60)       |
-| `NEXT_PUBLIC_GA_ID`              | ID do Google Analytics 4 (opcional)         |
-| `NEXT_PUBLIC_ADSENSE_CLIENT`     | ID do Google AdSense (opcional)             |
+| Variável                         | Descrição                                |
+| -------------------------------- | ---------------------------------------- |
+| `API_BASE_URL`                   | URL base da API externa                  |
+| `API_EMAIL` / `API_PASSWORD`     | Credenciais de `POST /api/auth`          |
+| `API_TOKEN_REFRESH_SKEW_SECONDS` | Antecedência de renovação (**use `60`**) |
+| `NEXT_PUBLIC_SITE_URL`           | URL canônica pública (ou `SITE_URL`)     |
+| `NEXT_PUBLIC_GA_ID`              | Google Analytics 4 (opcional)            |
+| `NEXT_PUBLIC_ADSENSE_CLIENT`     | Google AdSense (opcional)                |
 
 ## Desenvolvimento
 
 ```bash
-npm install
-cp .env.example .env.local   # preencha as variáveis
-npm run dev                  # http://localhost:3000
+php -S localhost:8080 -t public public/router.php
 ```
 
-## Produção com Docker
+## Produção (Docker)
 
 ```bash
-cp .env.example .env         # preencha as variáveis
-docker compose up --build    # expõe a porta 3000
+docker compose up --build
 ```
 
-O `Dockerfile` é multi-stage e usa o build **standalone** do Next.js,
-resultando em uma imagem enxuta que roda como usuário não-root.
+Baseado em [`trafex/php-nginx:latest`](https://hub.docker.com/r/trafex/php-nginx)
+(Alpine + nginx + PHP-FPM 8.5), rodando como usuário **não-root** (`nobody`).
+O site fica em <http://localhost:3000> (a imagem escuta na 8080 internamente).
+
+O `.env` é montado como volume — as credenciais **não entram na imagem**.
+
+Como a imagem usa nginx, os arquivos `.htaccess` (Apache) não têm efeito: as
+regras equivalentes estão em [`docker/nginx-default.conf`](docker/nginx-default.conf),
+que também define `public/` como raiz do site — assim `config/`, `engine/` e
+`modules/` ficam inacessíveis pela web.
+
+## Pendências conhecidas
+
+- **Tailwind via CDN** no layout (`Play CDN`). Para produção, gerar o CSS
+  compilado e servir de `public/assets/css/`.
+- **GPS em tempo real**: o navegador consome o feed do DFTrans diretamente;
+  o serviço é geobloqueado (só responde do Brasil).
