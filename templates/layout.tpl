@@ -39,7 +39,7 @@
 
     <main id="conteudo" class="flex-1">
         {* Banner de topo — primeiro conteúdo abaixo do header. *}
-        <div class="container-page pt-4" style="height: 250px; max-height: 250px;">{include 'partials/ad.tpl' slot='6961870453'}</div>
+        <div class="container-page pt-4" style="height: 280px;">{include 'partials/ad.tpl' slot='6961870453'}</div>
 
         {block 'conteudo'}{/block}
     </main>
