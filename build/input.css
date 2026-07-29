@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { scroll-behavior: smooth; }
+  body { @apply bg-slate-50 text-slate-800 antialiased font-sans; }
+  :focus-visible { @apply outline-none ring-2 ring-brand-500 ring-offset-2; }
+}
+
+@layer components {
+  .container-page { @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8; }
+
+  .card { @apply rounded-xl border border-slate-200 bg-white shadow-sm transition
+           hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md; }
+
+  .btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600
+                  px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700; }
+
+  .nav-link { @apply rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition
+               hover:bg-brand-50 hover:text-brand-700; }
+
+  .skip-link { @apply sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50
+                focus:rounded-lg focus:bg-brand-600 focus:px-4 focus:py-2 focus:text-white; }
+
+  .input-busca { @apply w-full rounded-xl border border-slate-300 bg-white py-3.5 pl-12 pr-4
+                  text-slate-800 shadow-sm transition placeholder:text-slate-400
+                  focus:border-brand-500 focus:ring-2 focus:ring-brand-200; }
+
+  .linha-numero { @apply flex h-12 w-14 shrink-0 items-center justify-center rounded-lg
+                   bg-brand-600 text-sm font-bold text-white; }
+
+  .star-btn { @apply inline-flex items-center gap-1.5 rounded-lg p-1.5 text-slate-400
+               transition hover:bg-slate-100 hover:text-accent-500; }
+  .star-btn-label { @apply border border-slate-200 bg-white px-3 py-2 text-sm font-semibold
+                     hover:border-accent-400; }
+  .star-ativo { @apply text-accent-500; }
+
+  .horario-chip { @apply rounded-lg border border-slate-200 bg-slate-50 py-2 text-center
+                   text-sm font-semibold tabular-nums text-slate-700; }
+
+  .ponto-marker { @apply absolute -left-[1.72rem] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white; }
+
+  .stat-label { @apply text-xs uppercase tracking-wide text-slate-500; }
+  .stat-value { @apply font-semibold text-slate-800; }
+
+  .preco { @apply rounded-lg bg-brand-600 px-3 py-1.5 text-base font-bold tabular-nums text-white; }
+  .marcador { @apply inline-flex items-center rounded-full bg-accent-500/20 px-2.5 py-0.5
+               text-xs font-semibold uppercase tracking-wide text-accent-600; }
+  .uf-badge { @apply inline-flex h-5 min-w-[1.75rem] items-center justify-center rounded px-1 text-xs font-bold; }
+  .uf-go { @apply bg-accent-500/20 text-accent-600; }
+  .uf-df { @apply bg-brand-100 text-brand-800; }
+
+  .icone-info { @apply h-4 w-4 shrink-0 text-slate-400; }
+
+  .mapa { @apply h-[420px] w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-100; }
+  .mapa-alto { @apply h-[520px]; }
+}

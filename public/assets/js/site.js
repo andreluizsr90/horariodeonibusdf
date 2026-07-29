@@ -1,21 +1,31 @@
 /* ==========================================================================
- * Horário de Ônibus DF — JavaScript do site (Trongate / vanilla JS)
- * Substitui a interatividade que na versão Next.js era feita em React:
- *  - menu mobile e dropdown de Tarifas
- *  - favoritos (localStorage) + estrela toggle + seção de favoritos
- *  - colapso do itinerário
- *  - mapa do trajeto (Leaflet)
+ * Horário de Ônibus DF — melhorias progressivas (vanilla JS)
+ *
+ * Princípio: o HTML já vem completo do servidor. O JS apenas ENRIQUECE —
+ * favoritos (localStorage), filtro instantâneo, menus e mapas. Sem JS, o site
+ * continua navegável e a busca funciona via submit do formulário.
  * ========================================================================== */
 (function () {
   "use strict";
 
-  // -------------------- Favoritos (localStorage) --------------------
   var FAV_KEY = "honibusdf:favoritos";
+  var MARCAS = new RegExp("[" + String.fromCharCode(0x300) + "-" + String.fromCharCode(0x36f) + "]", "g");
+
+  function normalizar(s) {
+    return (s || "").normalize("NFD").replace(MARCAS, "").toLowerCase();
+  }
+
+  function esc(s) {
+    var d = document.createElement("div");
+    d.textContent = s == null ? "" : String(s);
+    return d.innerHTML;
+  }
+
+  // ==================== Favoritos (localStorage) ====================
 
   function lerFavoritos() {
     try {
-      var raw = localStorage.getItem(FAV_KEY);
-      var arr = raw ? JSON.parse(raw) : [];
+      var arr = JSON.parse(localStorage.getItem(FAV_KEY) || "[]");
       return Array.isArray(arr) ? arr.filter(function (x) { return typeof x === "string"; }) : [];
     } catch (e) { return []; }
   }
@@ -25,8 +35,6 @@
     document.dispatchEvent(new CustomEvent("favoritos:change"));
   }
 
-  function ehFavorito(slug) { return lerFavoritos().indexOf(slug) !== -1; }
-
   function alternarFavorito(slug) {
     var atual = lerFavoritos();
     var i = atual.indexOf(slug);
@@ -34,256 +42,425 @@
     salvarFavoritos(atual);
   }
 
-  // Atualiza o visual de todas as estrelas presentes na página.
-  function atualizarEstrelas() {
-    var botoes = document.querySelectorAll("[data-fav-toggle]");
-    botoes.forEach(function (btn) {
-      var slug = btn.getAttribute("data-fav-slug");
-      var ativo = ehFavorito(slug);
+  /** Sincroniza o visual de todas as estrelas com o storage. */
+  function pintarEstrelas() {
+    var favs = lerFavoritos();
+    document.querySelectorAll("[data-fav-toggle]").forEach(function (btn) {
+      var ativo = favs.indexOf(btn.getAttribute("data-fav-slug")) !== -1;
+      var numero = btn.getAttribute("data-fav-numero") || "";
       btn.setAttribute("aria-pressed", ativo ? "true" : "false");
-      var numero = btn.getAttribute("data-fav-numero") || "linha";
-      btn.setAttribute("aria-label", (ativo ? "Remover linha " : "Adicionar linha ") + numero + (ativo ? " dos favoritos" : " aos favoritos"));
-      btn.classList.toggle("text-accent-500", ativo);
-      btn.classList.toggle("text-slate-400", !ativo);
-      var icon = btn.querySelector(".star-icon");
-      if (icon) {
-        icon.setAttribute("fill", ativo ? "currentColor" : "none");
-        icon.setAttribute("stroke-width", ativo ? "0" : "1.5");
+      btn.setAttribute("aria-label",
+        (ativo ? "Remover linha " : "Adicionar linha ") + numero + (ativo ? " dos favoritos" : " aos favoritos"));
+      btn.classList.toggle("star-ativo", ativo);
+      var icone = btn.querySelector(".star-icon");
+      if (icone) {
+        icone.setAttribute("fill", ativo ? "currentColor" : "none");
+        icone.setAttribute("stroke-width", ativo ? "0" : "1.5");
       }
     });
   }
 
-  // Clique nas estrelas (delegado).
   document.addEventListener("click", function (e) {
     var btn = e.target.closest && e.target.closest("[data-fav-toggle]");
     if (!btn) return;
     e.preventDefault();
     e.stopPropagation();
-    alternarFavorito(btn.getAttribute("data-fav-slug"));
+
+    var slug = btn.getAttribute("data-fav-slug");
+    var eraFavorito = lerFavoritos().indexOf(slug) !== -1;
+    var sec = document.getElementById("favoritos");
+
+    // Feedback imediato: ao desfavoritar pela própria seção de favoritos,
+    // some com o card na hora (a sincronização com o servidor vem depois).
+    if (eraFavorito && sec && sec.contains(btn)) {
+      var card = btn.closest("li");
+      if (card) card.remove();
+    }
+
+    alternarFavorito(slug);
   });
 
-  document.addEventListener("favoritos:change", atualizarEstrelas);
-  window.addEventListener("storage", function (e) { if (e.key === FAV_KEY) atualizarEstrelas(); });
+  document.addEventListener("favoritos:change", pintarEstrelas);
+  window.addEventListener("storage", function (e) { if (e.key === FAV_KEY) pintarEstrelas(); });
 
-  // -------------------- Menu mobile + dropdown --------------------
-  function initNav() {
-    var mobileToggle = document.querySelector("[data-mobile-toggle]");
-    var mobileMenu = document.querySelector("[data-mobile-menu]");
-    if (mobileToggle && mobileMenu) {
-      mobileToggle.addEventListener("click", function () {
-        var open = mobileMenu.classList.toggle("hidden") === false;
-        mobileToggle.setAttribute("aria-expanded", open ? "true" : "false");
-      });
+  // ==================== Seção "Minhas Linhas Favoritas" ====================
+  // O HTML dos cards vem do SERVIDOR (/favoritos?slugs=…), renderizado pelo
+  // mesmo template das listagens — nenhum markup duplicado aqui.
+
+  var favoritosPendente = false;
+  var favoritosDesatualizado = false;
+
+  function renderFavoritos() {
+    var sec = document.getElementById("favoritos");
+    if (!sec) return;
+
+    // Já há um fetch em andamento: marca para refazer ao terminar, em vez de
+    // descartar a atualização (senão cliques rápidos dessincronizam a UI).
+    if (favoritosPendente) {
+      favoritosDesatualizado = true;
+      return;
     }
-    var dd = document.querySelector("[data-dropdown]");
-    if (dd) {
-      var toggle = dd.querySelector("[data-dropdown-toggle]");
-      var menu = dd.querySelector("[data-dropdown-menu]");
-      toggle.addEventListener("click", function () {
-        var open = menu.classList.toggle("hidden") === false;
-        toggle.setAttribute("aria-expanded", open ? "true" : "false");
-      });
-      document.addEventListener("click", function (e) {
-        if (!dd.contains(e.target)) { menu.classList.add("hidden"); toggle.setAttribute("aria-expanded", "false"); }
-      });
+
+    var favs = lerFavoritos();
+
+    if (!favs.length) {
+      sec.classList.add("hidden");
+      sec.innerHTML = "";
+      return;
     }
+
+    favoritosPendente = true;
+
+    fetch("/favoritos?slugs=" + encodeURIComponent(favs.join(",")))
+      .then(function (r) { return r.ok ? r.text() : ""; })
+      .then(function (html) {
+        if (html.trim()) {
+          sec.innerHTML = html;
+          sec.classList.remove("hidden");
+          pintarEstrelas();
+        } else {
+          sec.classList.add("hidden");
+          sec.innerHTML = "";
+        }
+      })
+      .catch(function () { /* mantém o que já está na tela */ })
+      .finally(function () {
+        favoritosPendente = false;
+        if (favoritosDesatualizado) {
+          favoritosDesatualizado = false;
+          renderFavoritos();
+        }
+      });
   }
 
-  // -------------------- Itinerário (colapso) --------------------
-  function initItinerario() {
-    var btn = document.querySelector("[data-itinerario-toggle]");
-    var extra = document.querySelector("[data-itinerario-extra]");
-    var scroller = document.querySelector("[data-itinerario-scroller]");
-    if (!btn || !extra) return;
-    btn.addEventListener("click", function () {
-      var aberto = extra.classList.toggle("hidden") === false;
-      btn.setAttribute("aria-expanded", aberto ? "true" : "false");
-      btn.textContent = aberto ? "Recolher itinerário" : btn.getAttribute("data-label-fechado");
-      if (scroller) scroller.classList.toggle("max-h-[26rem]", aberto);
-      if (scroller) scroller.classList.toggle("overflow-y-auto", aberto);
+  // ==================== Filtro instantâneo (melhoria) ====================
+  // O form já funciona sem JS (GET /linhas?q=…). Aqui filtramos os cards
+  // visíveis para dar resposta imediata enquanto o usuário digita.
+
+  function initFiltro() {
+    var input = document.getElementById("busca-linha");
+    var lista = document.getElementById("linhas-lista");
+    if (!input || !lista) return;
+
+    var cards = Array.prototype.slice.call(lista.querySelectorAll("[data-linha]"));
+    var vazio = document.getElementById("linhas-vazio");
+    var status = document.getElementById("busca-status");
+    var statusOriginal = status ? status.textContent : "";
+    var linkTodos = document.getElementById("busca-todos");
+
+    input.addEventListener("input", function () {
+      var termo = normalizar(input.value.trim());
+      var visiveis = 0;
+
+      cards.forEach(function (card) {
+        var mostra = !termo || normalizar(card.getAttribute("data-busca")).indexOf(termo) !== -1;
+        card.classList.toggle("hidden", !mostra);
+        if (mostra) visiveis++;
+      });
+
+      if (vazio) vazio.classList.toggle("hidden", visiveis !== 0);
+      if (linkTodos && termo) linkTodos.href = "/linhas?q=" + encodeURIComponent(input.value.trim());
+      if (status) {
+        status.textContent = termo
+          ? visiveis + " de " + cards.length + " exibidas correspondem a “" + input.value + "”"
+          : statusOriginal;
+      }
     });
   }
 
-  // -------------------- Mapa do trajeto (Leaflet) --------------------
-  function initMapa() {
-    var el = document.getElementById("mapa-trajeto");
-    if (!el || typeof L === "undefined") return;
-    var percurso;
-    try { percurso = JSON.parse(el.getAttribute("data-percurso") || "{}"); } catch (e) { return; }
-    var ida = percurso.ida || [];
-    var volta = percurso.volta || [];
-    if (!ida.length && !volta.length) return;
-
-    var map = L.map(el, { scrollWheelZoom: false });
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap", maxZoom: 19
-    }).addTo(map);
-
-    var todas = [];
-    if (ida.length) { L.polyline(ida, { color: "#1d63f1", weight: 4 }).addTo(map); todas = todas.concat(ida); }
-    if (volta.length) { L.polyline(volta, { color: "#e69100", weight: 3, dashArray: "6 6" }).addTo(map); todas = todas.concat(volta); }
-
-    if (todas.length) {
-      var origem = ida[0] || volta[0];
-      var destino = ida[ida.length - 1] || volta[volta.length - 1];
-      L.circleMarker(origem, { radius: 7, color: "#059669", fillColor: "#10b981", fillOpacity: 1 }).addTo(map).bindPopup("Origem");
-      L.circleMarker(destino, { radius: 7, color: "#164ede", fillColor: "#1d63f1", fillOpacity: 1 }).addTo(map).bindPopup("Destino");
-      map.fitBounds(L.latLngBounds(todas).pad(0.1));
-    }
-  }
-
-  // -------------------- Home (busca + lista + favoritos) --------------------
-  var STAR = "M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z";
-  var BASE = document.querySelector("base") ? document.querySelector("base").href : "/";
-
-  function esc(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }
-
-  function estrelaHtml(linha, extraClass) {
-    return '<button type="button" data-fav-toggle data-fav-slug="' + esc(linha.slug) + '" data-fav-numero="' + esc(linha.numero) +
-      '" aria-pressed="false" class="' + (extraClass || "") + ' inline-flex items-center rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-accent-500">' +
-      '<svg class="star-icon h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linejoin="round" d="' + STAR + '"/></svg></button>';
-  }
-
-  function subtitulo(linha) {
-    var partes = [linha.origem, linha.destino].filter(Boolean);
-    if (partes.length) return esc(partes.join(" → "));
-    return esc(linha.cidadeNome || "");
-  }
-
-  function cardLinha(linha) {
-    return '<li class="relative">' +
-      '<a href="' + BASE + 'linhas/' + encodeURIComponent(linha.slug) + '" class="card group flex items-center gap-4 p-4 pr-12">' +
-      '<span class="flex h-12 w-14 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">' + esc(linha.numero || "—") + '</span>' +
-      '<span class="min-w-0"><span class="block truncate font-semibold text-slate-800 group-hover:text-brand-700">' + esc(linha.nome) + '</span>' +
-      (subtitulo(linha) ? '<span class="mt-0.5 block truncate text-sm text-slate-500">' + subtitulo(linha) + '</span>' : '') +
-      '</span></a>' + estrelaHtml(linha, "absolute right-2 top-2") + '</li>';
-  }
-
-  function cardFavorito(linha) {
-    var acoes = '<a href="' + BASE + 'linhas/' + encodeURIComponent(linha.slug) + '" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-700">Ver Horários</a>';
-    if (linha.semob) {
-      acoes += '<a href="' + BASE + 'linhas/' + encodeURIComponent(linha.slug) + '/localizacao" class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-white px-3 py-2 text-sm font-semibold text-brand-700 transition hover:bg-brand-50"><span class="inline-block h-2 w-2 animate-pulse rounded-full bg-brand-500"></span>Ver Localização</a>';
-    }
-    return '<li class="relative flex flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm">' +
-      '<div class="flex items-start gap-3 pr-9"><span class="flex h-11 w-14 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">' + esc(linha.numero || "—") + '</span>' +
-      '<span class="min-w-0"><span class="block truncate font-semibold text-slate-800">' + esc(linha.nome) + '</span>' +
-      (subtitulo(linha) ? '<span class="mt-0.5 block truncate text-sm text-slate-500">' + subtitulo(linha) + '</span>' : '') + '</span></div>' +
-      estrelaHtml(linha, "absolute right-2 top-2") +
-      '<div class="mt-4 flex flex-wrap gap-2">' + acoes + '</div></li>';
-  }
-
-  function initHome() {
-    var lista = document.getElementById("linhas-lista");
-    if (!lista || !Array.isArray(window.__LINHAS)) return;
-    var todas = window.__LINHAS;
-    var mapa = {};
-    todas.forEach(function (l) { mapa[l.slug] = l; });
-
-    var busca = document.getElementById("busca-linha");
-    var status = document.getElementById("busca-status");
-    var secaoFav = document.getElementById("favoritos");
-
-    function renderLista() {
-      var termo = (busca && busca.value || "").trim().toLowerCase();
-      // __LINHAS_LIMITE: quantas exibir sem busca ativa (0/undefined = todas;
-      // a home usa 50). Definido pela view.
-      var limite = typeof window.__LINHAS_LIMITE === "number" ? window.__LINHAS_LIMITE : 50;
-      var res = termo
-        ? todas.filter(function (l) {
-            return (l.nome || "").toLowerCase().indexOf(termo) !== -1 ||
-                   (l.numero || "").toLowerCase().indexOf(termo) !== -1 ||
-                   (l.origem || "").toLowerCase().indexOf(termo) !== -1 ||
-                   (l.destino || "").toLowerCase().indexOf(termo) !== -1;
-          })
-        : (limite > 0 ? todas.slice(0, limite) : todas);
-      lista.innerHTML = res.length ? res.map(cardLinha).join("") : '<li class="col-span-full rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">Nenhuma linha encontrada.</li>';
-      if (status) {
-        status.textContent = termo
-          ? res.length + " resultado" + (res.length === 1 ? "" : "s") + ' para "' + (busca.value) + '"'
-          : (res.length < todas.length
-              ? "Exibindo " + res.length + " de " + todas.length + " linhas"
-              : todas.length + " linhas disponíveis");
-      }
-      atualizarEstrelas();
-    }
-
-    function renderFavoritos() {
-      if (!secaoFav) return;
-      var favs = lerFavoritos().map(function (s) { return mapa[s]; }).filter(Boolean);
-      if (!favs.length) { secaoFav.classList.add("hidden"); secaoFav.innerHTML = ""; return; }
-      secaoFav.classList.remove("hidden");
-      secaoFav.innerHTML =
-        '<div class="mb-4 flex items-center gap-2"><svg class="h-5 w-5 text-accent-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="' + STAR + '"/></svg>' +
-        '<h2 id="favoritos-titulo" class="text-lg font-bold text-slate-900">Minhas Linhas Favoritas</h2>' +
-        '<span class="rounded-full bg-accent-500/20 px-2.5 py-0.5 text-xs font-semibold text-accent-600">' + favs.length + '</span></div>' +
-        '<ul class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">' + favs.map(cardFavorito).join("") + '</ul>';
-      atualizarEstrelas();
-    }
-
-    if (busca) busca.addEventListener("input", renderLista);
-    document.addEventListener("favoritos:change", renderFavoritos);
-    renderFavoritos();
-    renderLista();
-  }
-
-  // -------------------- Tarifas do Entorno (busca) --------------------
-  // Regex de marcas diacríticas montada por código (evita caracteres
-  // combinantes literais no arquivo-fonte).
-  var MARCAS = new RegExp("[" + String.fromCharCode(0x300) + "-" + String.fromCharCode(0x36f) + "]", "g");
-
-  function normalizar(s) {
-    return (s || "").normalize("NFD").replace(MARCAS, "").toLowerCase();
-  }
+  // ==================== Busca de tarifas ====================
 
   function initTarifas() {
-    var busca = document.getElementById("busca-tarifa");
+    var input = document.getElementById("busca-tarifa");
     var lista = document.getElementById("tarifas-lista");
-    if (!busca || !lista) return;
+    if (!input || !lista) return;
+
     var itens = Array.prototype.slice.call(lista.querySelectorAll("li"));
     var status = document.getElementById("tarifa-status");
     var vazio = document.getElementById("tarifas-vazio");
 
-    busca.addEventListener("input", function () {
-      var termo = normalizar(busca.value.trim());
+    input.addEventListener("input", function () {
+      var termo = normalizar(input.value.trim());
       var visiveis = 0;
+
       itens.forEach(function (li) {
-        var alvo = normalizar(li.getAttribute("data-busca"));
-        var mostra = !termo || alvo.indexOf(termo) !== -1;
+        var mostra = !termo || normalizar(li.getAttribute("data-busca")).indexOf(termo) !== -1;
         li.classList.toggle("hidden", !mostra);
         if (mostra) visiveis++;
       });
+
       if (status) {
         status.textContent = termo
-          ? visiveis + " resultado" + (visiveis === 1 ? "" : "s") + ' para "' + busca.value + '"'
+          ? visiveis + " resultado" + (visiveis === 1 ? "" : "s") + " para “" + input.value + "”"
           : itens.length + " trajetos disponíveis";
       }
       if (vazio) vazio.classList.toggle("hidden", visiveis !== 0);
     });
   }
 
-  // -------------------- GPS em tempo real (Leaflet) --------------------
-  var GPS_INTERVALO = 10; // segundos
+  // ==================== Navegação ====================
 
-  /** Converte o GeoJSON do DFTrans em veículos [{id,lat,lng,velocidade}]. */
+  function initNav() {
+    var toggle = document.querySelector("[data-mobile-toggle]");
+    var menu = document.querySelector("[data-mobile-menu]");
+    if (toggle && menu) {
+      toggle.addEventListener("click", function () {
+        var aberto = !menu.classList.toggle("hidden");
+        toggle.setAttribute("aria-expanded", aberto ? "true" : "false");
+      });
+    }
+
+    var dd = document.querySelector("[data-dropdown]");
+    if (!dd) return;
+    var ddToggle = dd.querySelector("[data-dropdown-toggle]");
+    var ddMenu = dd.querySelector("[data-dropdown-menu]");
+
+    ddToggle.addEventListener("click", function () {
+      var aberto = !ddMenu.classList.toggle("hidden");
+      ddToggle.setAttribute("aria-expanded", aberto ? "true" : "false");
+    });
+    document.addEventListener("click", function (e) {
+      if (!dd.contains(e.target)) {
+        ddMenu.classList.add("hidden");
+        ddToggle.setAttribute("aria-expanded", "false");
+      }
+    });
+  }
+
+  // ==================== Mapa do trajeto ====================
+
+  /**
+   * O Leaflet calcula o tamanho do mapa na criação. Se o container ainda não
+   * tinha dimensões nesse instante (layout/fontes/CSS pendentes), o overlay
+   * SVG nasce com largura 0 e as polylines saem recortadas ("M0 0").
+   * `invalidateSize()` força o recálculo; o ResizeObserver cobre mudanças
+   * posteriores (rotação de tela, container responsivo).
+   */
+  function corrigirTamanhoMapa(map, el, aoRedimensionar) {
+    var refazer = function () {
+      map.invalidateSize(false);
+      if (typeof aoRedimensionar === "function") aoRedimensionar();
+    };
+
+    requestAnimationFrame(refazer);
+    setTimeout(refazer, 250);
+
+    if (typeof ResizeObserver !== "undefined") {
+      var ultimaLargura = el.clientWidth;
+      new ResizeObserver(function () {
+        if (el.clientWidth !== ultimaLargura) {
+          ultimaLargura = el.clientWidth;
+          refazer();
+        }
+      }).observe(el);
+    }
+  }
+
+  var COR_ORIGEM = "#059669"; // emerald-600
+  var SENTIDOS_MAPA = [
+    { chave: "ida", nome: "Trajeto de Ida", cor: "#1d63f1" },   // brand-600
+    { chave: "volta", nome: "Trajeto de Volta", cor: "#dc2626" } // red-600
+  ];
+
+  function initMapaTrajeto() {
+    var el = document.getElementById("mapa-trajeto");
+    if (!el || typeof L === "undefined") return;
+
+    var percurso;
+    try { percurso = JSON.parse(el.getAttribute("data-percurso") || "{}"); } catch (e) { return; }
+
+    // Só sentidos desenháveis (2+ pontos formam uma linha).
+    var disponiveis = SENTIDOS_MAPA
+      .map(function (s) {
+        return { chave: s.chave, nome: s.nome, cor: s.cor, coords: (percurso && percurso[s.chave]) || [] };
+      })
+      .filter(function (s) { return s.coords.length >= 2; });
+
+    if (!disponiveis.length) return;
+
+    var map = L.map(el, { scrollWheelZoom: false });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; colaboradores do <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19
+    }).addTo(map);
+
+    var camada = null;
+    var sentidoAtual = 0;
+    var legenda = document.getElementById("legenda-destino");
+
+    /** Desenha UM sentido por vez, substituindo o anterior. */
+    function desenhar(i) {
+      var atual = disponiveis[i];
+      if (!atual) return;
+      sentidoAtual = i;
+
+      if (camada) { map.removeLayer(camada); camada = null; }
+
+      var grupo = L.layerGroup();
+      var linha = L.polyline(atual.coords, {
+        color: atual.cor, weight: 5, opacity: 0.9, lineJoin: "round", lineCap: "round"
+      }).addTo(grupo);
+
+      // circleMarker evita os 404 clássicos dos ícones PNG do Leaflet.
+      L.circleMarker(atual.coords[0], {
+        radius: 7, color: "#ffffff", weight: 2, fillColor: COR_ORIGEM, fillOpacity: 1
+      }).bindPopup("Origem").addTo(grupo);
+
+      L.circleMarker(atual.coords[atual.coords.length - 1], {
+        radius: 7, color: "#ffffff", weight: 2, fillColor: atual.cor, fillOpacity: 1
+      }).bindPopup("Destino").addTo(grupo);
+
+      grupo.addTo(map);
+      camada = grupo;
+
+      map.fitBounds(linha.getBounds(), { padding: [28, 28] });
+
+      el.setAttribute("aria-label", "Mapa do " + atual.nome.toLowerCase());
+      if (legenda) legenda.style.backgroundColor = atual.cor;
+    }
+
+    // Alternador: só faz sentido quando há Ida E Volta.
+    var barra = document.getElementById("mapa-sentidos");
+    if (barra && disponiveis.length > 1) {
+      barra.classList.remove("hidden");
+      barra.classList.add("inline-flex");
+
+      disponiveis.forEach(function (s, i) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.setAttribute("role", "tab");
+        btn.textContent = s.nome;
+        btn.className = "rounded-lg px-4 py-2 text-sm font-semibold transition";
+
+        btn.addEventListener("click", function () {
+          barra.querySelectorAll("button").forEach(function (b) {
+            b.setAttribute("aria-selected", "false");
+            b.className = "rounded-lg px-4 py-2 text-sm font-semibold transition text-slate-600 hover:text-slate-900";
+          });
+          btn.setAttribute("aria-selected", "true");
+          btn.className = "rounded-lg px-4 py-2 text-sm font-semibold transition bg-white text-brand-700 shadow-sm";
+          desenhar(i);
+        });
+
+        barra.appendChild(btn);
+      });
+
+      // Estado inicial: primeiro sentido selecionado.
+      barra.firstChild.setAttribute("aria-selected", "true");
+      barra.firstChild.className = "rounded-lg px-4 py-2 text-sm font-semibold transition bg-white text-brand-700 shadow-sm";
+      for (var j = 1; j < barra.children.length; j++) {
+        barra.children[j].setAttribute("aria-selected", "false");
+        barra.children[j].className = "rounded-lg px-4 py-2 text-sm font-semibold transition text-slate-600 hover:text-slate-900";
+      }
+    }
+
+    desenhar(0);
+    // Redesenha o sentido corrente após o recálculo de tamanho.
+    corrigirTamanhoMapa(map, el, function () { desenhar(sentidoAtual); });
+  }
+
+  // ==================== GPS em tempo real ====================
+
+  var GPS_INTERVALO = 10;
+  var COR_NEUTRO = "#64748b"; // slate-500 — sem rota para classificar o veículo
+
+  // Ícone de ônibus como divIcon vetorial (não depende de arquivos de imagem).
+  var BUS_PATH = "M4 16c0 .88.39 1.67 1 2.22V20c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h8v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm1.5-6H6V6h12v5z";
+
+  function criarIconeOnibus(cor) {
+    return L.divIcon({
+      className: "onibus-pin",
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
+      popupAnchor: [0, -15],
+      html: '<span style="display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:9999px;background:' + cor +
+        ';border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.45)">' +
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="' + BUS_PATH + '"/></svg></span>'
+    });
+  }
+
+  // --- Geometria: em qual rota (ida/volta) o veículo está "por cima"? ------
+  // Projeção equirectangular local (metros aprox.) — suficiente para COMPARAR
+  // a proximidade do veículo às duas polylines na escala de Brasília.
+  var LAT0 = -15.8;
+  var R_TERRA = 6371000;
+
+  function projetar(lat, lng) {
+    var rad = Math.PI / 180;
+    return [lng * rad * Math.cos(LAT0 * rad) * R_TERRA, lat * rad * R_TERRA];
+  }
+
+  function distPontoSegmento(p, a, b) {
+    var dx = b[0] - a[0], dy = b[1] - a[1];
+    var len2 = dx * dx + dy * dy;
+    var t = len2 === 0 ? 0 : ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+  }
+
+  function distAteRota(p, rota) {
+    if (!rota.length) return Infinity;
+    if (rota.length === 1) return Math.hypot(p[0] - rota[0][0], p[1] - rota[0][1]);
+    var min = Infinity;
+    for (var i = 0; i < rota.length - 1; i++) {
+      min = Math.min(min, distPontoSegmento(p, rota[i], rota[i + 1]));
+    }
+    return min;
+  }
+
+  /** GeoJSON do DFTrans → [{id, lat, lng, velocidade}]. */
   function normalizarFeed(fc) {
     var out = [];
-    var feats = (fc && fc.features) || [];
-    for (var i = 0; i < feats.length; i++) {
-      var f = feats[i];
+    ((fc && fc.features) || []).forEach(function (f) {
       var c = f.geometry && f.geometry.coordinates;
-      if (!c || c.length < 2) continue;
+      if (!c || c.length < 2) return;
       // GeoJSON é [lng, lat]; o Leaflet espera [lat, lng].
       var lng = Number(c[0]), lat = Number(c[1]);
-      if (!isFinite(lat) || !isFinite(lng)) continue;
-      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+      if (!isFinite(lat) || !isFinite(lng)) return;
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
       var p = f.properties || {};
       out.push({
         id: p.numero != null ? String(p.numero) : lat.toFixed(5) + "," + lng.toFixed(5),
         lat: lat, lng: lng,
         velocidade: p.velocidade != null ? Number(p.velocidade) : null
       });
-    }
+    });
     return out;
+  }
+
+  var COR_IDA_MAPA = "#1d63f1";   // brand-600
+  var COR_VOLTA_MAPA = "#dc2626"; // red-600
+
+  /** Legenda: traço da rota + pino do ônibus, por sentido. */
+  function renderLegendaGps(idaOk, voltaOk) {
+    var box = document.getElementById("mapa-legenda");
+    if (!box) return;
+
+    function traco(cor, label) {
+      return '<span class="inline-flex items-center gap-2">' +
+        '<span class="inline-block h-1 w-5 rounded-full" style="background-color:' + cor + '" aria-hidden="true"></span>' +
+        label + "</span>";
+    }
+
+    function pino(cor, label) {
+      return '<span class="inline-flex items-center gap-2">' +
+        '<span class="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full" style="background-color:' + cor + '" aria-hidden="true">' +
+        '<svg width="9" height="9" viewBox="0 0 24 24" fill="#fff"><path d="' + BUS_PATH + '"/></svg></span>' +
+        label + "</span>";
+    }
+
+    var itens = [];
+    if (idaOk) itens.push(traco(COR_IDA_MAPA, "Rota de ida"));
+    if (voltaOk) itens.push(traco(COR_VOLTA_MAPA, "Rota de volta"));
+    if (idaOk) itens.push(pino(COR_IDA_MAPA, "Ônibus na ida"));
+    if (voltaOk) itens.push(pino(COR_VOLTA_MAPA, "Ônibus na volta"));
+
+    if (!idaOk && !voltaOk) {
+      itens.push(pino(COR_NEUTRO, "Ônibus (posição atual)"));
+      itens.push("<span>Traçado da rota indisponível para esta linha.</span>");
+    }
+
+    box.innerHTML = itens.join("");
   }
 
   function initGps() {
@@ -302,55 +479,98 @@
       attribution: "&copy; colaboradores do OpenStreetMap", maxZoom: 19
     }).addTo(map);
 
-    // O TRAÇADO é estático: desenhado UMA vez (nunca redesenhado nos ciclos).
-    var pontosRota = [];
-    if (percurso) {
-      if (percurso.ida && percurso.ida.length) {
-        L.polyline(percurso.ida, { color: "#1d63f1", weight: 4, opacity: 0.7 }).addTo(map);
-        pontosRota = pontosRota.concat(percurso.ida);
-      }
-      if (percurso.volta && percurso.volta.length) {
-        L.polyline(percurso.volta, { color: "#dc2626", weight: 3, opacity: 0.7, dashArray: "6 6" }).addTo(map);
-        pontosRota = pontosRota.concat(percurso.volta);
-      }
-      if (pontosRota.length) map.fitBounds(L.latLngBounds(pontosRota).pad(0.1));
-    }
+    // O TRAÇADO é estático: desenhado UMA vez, nunca nos ciclos seguintes.
+    // Aqui mostramos ida E volta juntas, pois o objetivo é ver os veículos
+    // sobre toda a linha (diferente do mapa de trajeto, que alterna sentidos).
+    var idaOk = !!(percurso && percurso.ida && percurso.ida.length >= 2);
+    var voltaOk = !!(percurso && percurso.volta && percurso.volta.length >= 2);
+    var pts = [];
 
-    // Cache de marcadores por id do veículo — a cada ciclo só a POSIÇÃO muda.
-    var marcadores = {};
-    var icone = L.divIcon({
-      className: "",
-      html: '<div style="background:#1d63f1;border:2px solid #fff;border-radius:9999px;width:16px;height:16px;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>',
-      iconSize: [16, 16], iconAnchor: [8, 8]
+    if (idaOk) {
+      L.polyline(percurso.ida, { color: COR_IDA_MAPA, weight: 4, opacity: 0.85 }).addTo(map);
+      pts = pts.concat(percurso.ida);
+    }
+    if (voltaOk) {
+      L.polyline(percurso.volta, { color: COR_VOLTA_MAPA, weight: 4, opacity: 0.85 }).addTo(map);
+      pts = pts.concat(percurso.volta);
+    }
+    if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.1));
+
+    corrigirTamanhoMapa(map, el, function () {
+      if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.1));
     });
 
-    function atualizarVeiculos(veiculos) {
+    renderLegendaGps(idaOk, voltaOk);
+
+    // Rotas projetadas uma única vez — usadas para classificar cada veículo.
+    var idaProj = idaOk ? percurso.ida.map(function (c) { return projetar(c[0], c[1]); }) : [];
+    var voltaProj = voltaOk ? percurso.volta.map(function (c) { return projetar(c[0], c[1]); }) : [];
+
+    var icones = {
+      ida: criarIconeOnibus(COR_IDA_MAPA),
+      volta: criarIconeOnibus(COR_VOLTA_MAPA),
+      neutro: criarIconeOnibus(COR_NEUTRO)
+    };
+
+    /** Sentido pela rota mais próxima; "neutro" quando não há traçado. */
+    function sentidoDoVeiculo(v) {
+      if (!idaProj.length && !voltaProj.length) return "neutro";
+      if (idaProj.length && !voltaProj.length) return "ida";
+      if (voltaProj.length && !idaProj.length) return "volta";
+      var p = projetar(v.lat, v.lng);
+      return distAteRota(p, idaProj) <= distAteRota(p, voltaProj) ? "ida" : "volta";
+    }
+
+    function popupHtml(v, sentido) {
+      var vel = v.velocidade != null && isFinite(v.velocidade) ? Math.round(v.velocidade) + " km/h" : "—";
+      var rotulo = sentido === "ida" ? "Sentido: ida"
+        : sentido === "volta" ? "Sentido: volta" : "Sentido: indefinido";
+      return '<div style="font-size:12px;line-height:1.5"><strong>Ônibus ' + esc(v.id) +
+        "</strong><br/>" + rotulo + "<br/>Velocidade: " + vel + "</div>";
+    }
+
+    // Marcadores reaproveitados entre ciclos: só a posição (e o ícone, se o
+    // veículo trocou de sentido) mudam.
+    var marcadores = {};
+    var sentidos = {};
+
+    function atualizar(veiculos) {
       var vistos = {};
+
       veiculos.forEach(function (v) {
         vistos[v.id] = true;
-        var texto = "Veículo " + v.id + (v.velocidade != null && isFinite(v.velocidade) ? " · " + v.velocidade + " km/h" : "");
+        var sentido = sentidoDoVeiculo(v);
+
         if (marcadores[v.id]) {
-          marcadores[v.id].setLatLng([v.lat, v.lng]).setPopupContent(texto);
+          marcadores[v.id].setLatLng([v.lat, v.lng]);
+          if (sentidos[v.id] !== sentido) marcadores[v.id].setIcon(icones[sentido]);
+          marcadores[v.id].setPopupContent(popupHtml(v, sentido));
         } else {
-          marcadores[v.id] = L.marker([v.lat, v.lng], { icon: icone }).addTo(map).bindPopup(texto);
+          marcadores[v.id] = L.marker([v.lat, v.lng], { icon: icones[sentido] })
+            .addTo(map).bindPopup(popupHtml(v, sentido));
         }
+
+        sentidos[v.id] = sentido;
       });
-      // Remove os que sumiram do feed.
+
       Object.keys(marcadores).forEach(function (id) {
-        if (!vistos[id]) { map.removeLayer(marcadores[id]); delete marcadores[id]; }
+        if (!vistos[id]) {
+          map.removeLayer(marcadores[id]);
+          delete marcadores[id];
+          delete sentidos[id];
+        }
       });
     }
 
     function buscar() {
-      if (statusEl) statusEl.textContent = "Atualizando…";
       fetch("https://www.sistemas.dftrans.df.gov.br/gps/linha/" + encodeURIComponent(numero) + "/geo/recent")
         .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
         .then(function (fc) {
-          var veiculos = normalizarFeed(fc);
-          atualizarVeiculos(veiculos);
+          var v = normalizarFeed(fc);
+          atualizar(v);
           if (statusEl) {
-            statusEl.textContent = veiculos.length
-              ? veiculos.length + " ônibus em operação agora"
+            statusEl.textContent = v.length
+              ? v.length + " ônibus em operação agora"
               : "Nenhum ônibus transmitindo posição no momento.";
           }
         })
@@ -359,10 +579,8 @@
         });
     }
 
-    // Ciclo: contador regressivo → busca → reinicia.
-    var restante = 0;
     buscar();
-    restante = GPS_INTERVALO;
+    var restante = GPS_INTERVALO;
     setInterval(function () {
       restante--;
       if (restante <= 0) { buscar(); restante = GPS_INTERVALO; }
@@ -370,16 +588,27 @@
     }, 1000);
   }
 
-  // -------------------- Bootstrap --------------------
-  function init() {
-    atualizarEstrelas();
-    initNav();
-    initItinerario();
-    initMapa();
-    initHome();
-    initTarifas();
-    initGps();
+  // ==================== Service Worker (PWA) ====================
+
+  function initSw() {
+    if (!("serviceWorker" in navigator) || location.protocol === "file:") return;
+    navigator.serviceWorker.register("/sw.js").catch(function () {});
   }
+
+  // ==================== Bootstrap ====================
+
+  function init() {
+    pintarEstrelas();
+    renderFavoritos();
+    document.addEventListener("favoritos:change", renderFavoritos);
+    initFiltro();
+    initTarifas();
+    initNav();
+    initMapaTrajeto();
+    initGps();
+    initSw();
+  }
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
   } else {

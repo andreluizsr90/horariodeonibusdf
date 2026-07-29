@@ -7,11 +7,9 @@ services:
     container_name: horariodeonibusdf
     restart: unless-stopped
     ports:
-      # A imagem trafex/php-nginx escuta na 8080 (usuário não-root).
       - "3000:8080"
     volumes:
-      # Credenciais e configuração pública ficam FORA da imagem — o app lê
-      # este arquivo em runtime (config/env.php).
+      # Credenciais ficam fora da imagem — lidas em runtime.
       - ./.env:/var/www/html/.env:ro
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/robots.txt"]

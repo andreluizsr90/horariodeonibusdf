@@ -1,85 +1,105 @@
-# Horário de Ônibus DF — Trongate (PHP)
+# Horário de Ônibus DF
 
-Portal de consulta de horários, linhas e itinerários de ônibus do Distrito
-Federal e Entorno. Construído sobre o
-[Trongate Framework](https://github.com/trongate/trongate-framework) (PHP MVC).
+Portal de horários, linhas e itinerários de ônibus do Distrito Federal e Entorno.
+**PHP 8.4+ puro** com Composer — sem framework full-stack, apenas bibliotecas
+focadas.
 
-> Esta é a versão PHP/Trongate. A versão anterior em Next.js/React permanece
-> disponível no histórico do Git (branch `main`).
+> Versões anteriores (Next.js e Trongate) permanecem no histórico do Git.
 
-## Arquitetura
+## Stack
+
+| Papel        | Biblioteca                    | Por quê                                        |
+| ------------ | ----------------------------- | ---------------------------------------------- |
+| Rotas        | `league/route`                | PSR-7/PSR-15, ativo, sem deprecations no 8.5   |
+| Templates    | `fenom/fenom`                 | Rápido, compilado, **auto-escape** por padrão   |
+| HTTP/API     | `guzzlehttp/guzzle`           | Middleware resolve Bearer + retry 401           |
+| PSR-7        | `laminas/laminas-diactoros`   | Implementação de request/response               |
+| SSL          | `composer/ca-bundle`          | CA bundle gerenciado (funciona em qualquer SO)  |
+| Env          | `vlucas/phpdotenv`            | Leitura do `.env`                               |
+
+## Estrutura
 
 ```
-config/
-├── config.php          # constantes (BASE_URL, SITE_URL, API_*, GA/AdSense)
-├── env.php             # leitor do .env (compartilhado com a versão antiga)
-├── custom_routing.php  # rotas principais + aliases
-└── cacert.pem          # CA bundle (SSL do cURL em qualquer ambiente)
+src/
+├── Domain/       # DTOs TIPADOS: Linha, LinhaDetalhe, Cidade, Sentido, Horario, Percurso
+├── Api/          # BusApiClient (Guzzle), TokenStore, BusRepository (anti-corruption layer)
+├── Http/         # Controllers
+├── View/         # View (Fenom) + Meta (SEO)
+├── Support/      # Config, Slug
+└── Kernel.php    # Monta dependências, registra rotas, despacha
 
-modules/
-├── busapi/             # cliente da API externa (auth+cache, retry 401, DTOs)
-├── home/               # página inicial
-├── linhas/             # listagem, detalhe e localização em tempo real (GPS)
-├── cidades/            # listagem de cidades e linhas por cidade
-├── tarifas/            # tarifas DF e Entorno (+ dados estáticos)
-├── achados/            # achados e perdidos (+ dados estáticos)
-├── seo/                # sitemap.xml e robots.txt dinâmicos
-└── templates/views/public.php   # layout global (header, anúncios, footer, SEO)
-
-public/
-├── assets/js/site.js   # favoritos, busca, itinerário, mapas (JS puro)
-├── assets/img/         # logos
-└── router.php          # front controller p/ o servidor embutido do PHP (dev)
+templates/        # .tpl (layout, partials reutilizáveis, páginas)
+data/             # Dados estáticos (tarifas, achados e perdidos)
+public/           # Front controller + assets (CSS compilado, JS, imagens)
+build/            # Fontes do Tailwind (dev) — NÃO vai para produção
+docker/           # Config do nginx
 ```
-
-**Fluxo:** rota → controller (`modules/X/X.php`) → `$this->templates->public($data)`
-→ layout global renderiza a view (`modules/X/views/*.php`).
-
-Os dados vêm 100% da API externa — **não há banco de dados** (o ORM do
-Trongate não é usado).
-
-## Rotas e canonical
-
-Rotas *alias* renderizam o mesmo conteúdo da principal, mas o
-`<link rel="canonical">` sempre aponta para a **rota principal**:
-
-| Principal (canonical)            | Alias                                            |
-| -------------------------------- | ------------------------------------------------ |
-| `/`                              | `/linhas` (canonical → `/`)                      |
-| `/cidades`                       | `/city`                                          |
-| `/cidades/{slug}`                | `/city/{slug}`                                   |
-| `/linhas/{slug}`                 | `/travel/{slug}`                                 |
-| `/linhas/{slug}/localizacao`     | `/linha/{slug}/localizacao`, `/travel/live/{slug}` |
-| `/tarifas/distrito-federal`      | `/pages/tarifas-distrito-federal`                |
-| `/tarifas/cidades-entorno`       | `/pages/tarifas-entorno`                         |
-| `/achados-e-perdidos`            | `/pages/achados-e-perdidos`                      |
-
-Há ainda `/sitemap.xml` (somente URLs canônicas) e `/robots.txt` dinâmicos.
 
 ## Integração com a API
 
-Isolada em `modules/busapi/Busapi.php`:
+Isolada em `src/Api/`:
 
-1. **Cache do token em arquivo** (compartilhado entre requisições PHP).
-2. **Renovação automática** quando falta menos que `API_TOKEN_REFRESH_SKEW_SECONDS`.
-3. **Retry único em 401** — reautentica e repete a chamada.
-4. `Authorization: Bearer {token}` em todas as chamadas `/api/onibus/*`.
+1. **Token cacheado em arquivo** (`TokenStore`), compartilhado entre requisições.
+2. **Renovação automática** dentro da janela de `API_TOKEN_REFRESH_SKEW_SECONDS`.
+3. **Bearer via middleware** do Guzzle — nenhuma chamada precisa lembrar do header.
+4. **Retry único em 401** — invalida o token, reautentica e repete.
+5. `BusRepository` traduz o JSON bruto em **objetos tipados** — o resto da
+   aplicação nunca vê arrays soltos.
 
-## Configuração (`.env` na raiz)
+## Rotas e canonical
+
+Rotas *alias* renderizam o mesmo conteúdo, mas o `<link rel="canonical">`
+sempre aponta para a **rota principal**:
+
+| Principal (canonical)        | Alias                                              |
+| ---------------------------- | -------------------------------------------------- |
+| `/`                          | `/linhas` (canonical → `/`)                        |
+| `/cidades`                   | `/city`                                            |
+| `/cidades/{slug}`            | `/city/{slug}`                                     |
+| `/linhas/{slug}`             | `/travel/{slug}`                                   |
+| `/linhas/{slug}/localizacao` | `/linha/{slug}/localizacao`, `/travel/live/{slug}` |
+| `/tarifas/distrito-federal`  | `/pages/tarifas-distrito-federal`                  |
+| `/tarifas/cidades-entorno`   | `/pages/tarifas-entorno`                           |
+| `/achados-e-perdidos`        | `/pages/achados-e-perdidos`                        |
+
+Mais `/sitemap.xml` (só URLs canônicas), `/robots.txt` e `/manifest.webmanifest`.
+
+## Renderização e progressive enhancement
+
+O HTML sai **completo do servidor** — os cards de linha são indexáveis pelos
+buscadores. O JavaScript apenas enriquece:
+
+- **Busca**: é um `<form>` GET real (`/linhas?q=…`) processado no servidor.
+  Funciona sem JS; com JS, filtra os cards visíveis instantaneamente.
+- **Favoritos**: os slugs ficam no `localStorage`; o HTML dos cards vem de
+  `/favoritos?slugs=…`, renderizado pelo **mesmo template** das listagens —
+  sem markup duplicado em JavaScript.
+- **Mapas** (Leaflet) e **GPS em tempo real** carregam sob demanda.
+
+## Configuração (`.env`)
 
 | Variável                         | Descrição                                |
 | -------------------------------- | ---------------------------------------- |
 | `API_BASE_URL`                   | URL base da API externa                  |
 | `API_EMAIL` / `API_PASSWORD`     | Credenciais de `POST /api/auth`          |
 | `API_TOKEN_REFRESH_SKEW_SECONDS` | Antecedência de renovação (**use `60`**) |
-| `NEXT_PUBLIC_SITE_URL`           | URL canônica pública (ou `SITE_URL`)     |
-| `NEXT_PUBLIC_GA_ID`              | Google Analytics 4 (opcional)            |
-| `NEXT_PUBLIC_ADSENSE_CLIENT`     | Google AdSense (opcional)                |
+| `SITE_URL`                       | URL canônica pública                     |
+| `GA_ID` / `ADSENSE_CLIENT`       | Tracking (opcionais)                     |
+| `APP_ENV`                        | `dev` mostra exceções e recompila views  |
+| `CACHE_DIR`                      | Cache de templates (padrão: temp do SO)  |
 
 ## Desenvolvimento
 
 ```bash
+composer install
 php -S localhost:8080 -t public public/router.php
+```
+
+Ao alterar estilos, regenere o CSS (Node é ferramenta de build, **não**
+dependência de runtime):
+
+```bash
+npx tailwindcss@3 -c build/tailwind.config.js -i build/input.css -o public/assets/css/app.css --minify
 ```
 
 ## Produção (Docker)
@@ -88,20 +108,16 @@ php -S localhost:8080 -t public public/router.php
 docker compose up --build
 ```
 
-Baseado em [`trafex/php-nginx:latest`](https://hub.docker.com/r/trafex/php-nginx)
-(Alpine + nginx + PHP-FPM 8.5), rodando como usuário **não-root** (`nobody`).
-O site fica em <http://localhost:3000> (a imagem escuta na 8080 internamente).
+Baseado em `trafex/php-nginx` (Alpine + nginx + PHP-FPM), rodando como usuário
+**não-root**. O site fica em <http://localhost:3000>.
 
-O `.env` é montado como volume — as credenciais **não entram na imagem**.
+O `.env` é montado como volume — as credenciais **não entram na imagem**. A
+raiz web é `public/`, então `src/`, `templates/`, `data/` e `vendor/` são
+inacessíveis pelo navegador.
 
-Como a imagem usa nginx, os arquivos `.htaccess` (Apache) não têm efeito: as
-regras equivalentes estão em [`docker/nginx-default.conf`](docker/nginx-default.conf),
-que também define `public/` como raiz do site — assim `config/`, `engine/` e
-`modules/` ficam inacessíveis pela web.
+## Notas
 
-## Pendências conhecidas
-
-- **Tailwind via CDN** no layout (`Play CDN`). Para produção, gerar o CSS
-  compilado e servir de `public/assets/css/`.
-- **GPS em tempo real**: o navegador consome o feed do DFTrans diretamente;
-  o serviço é geobloqueado (só responde do Brasil).
+- **GPS em tempo real**: o navegador consome o feed do DFTrans diretamente; o
+  serviço é geobloqueado (responde apenas do Brasil).
+- **Cache busting**: CSS e JS são servidos com `?v=mtime`, então publicar uma
+  nova versão invalida o cache do navegador e do service worker.

@@ -4,6 +4,9 @@
 .env
 .env.*
 _logo
+vendor
+node_modules
+build
 Dockerfile
 docker-compose.yml
 .dockerignore

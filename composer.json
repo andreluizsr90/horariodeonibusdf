@@ -1,0 +1,30 @@
+{
+    "name": "andre/horario-onibus-df",
+    "description": "Portal de horários de ônibus do Distrito Federal e Entorno",
+    "type": "project",
+    "license": "proprietary",
+    "require": {
+        "php": ">=8.4",
+        "ext-json": "*",
+        "ext-mbstring": "*",
+        "league/route": "^7.0",
+        "laminas/laminas-diactoros": "^3.0",
+        "laminas/laminas-httphandlerrunner": "^2.0",
+        "fenom/fenom": "^3.1",
+        "guzzlehttp/guzzle": "^8.0",
+        "composer/ca-bundle": "^1.5",
+        "vlucas/phpdotenv": "^5.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "src/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "optimize-autoloader": true
+    },
+    "scripts": {
+        "dev": "php -S localhost:8080 -t public public/router.php"
+    }
+}

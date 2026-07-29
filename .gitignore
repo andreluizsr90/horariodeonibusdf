@@ -1,5 +1,24 @@
+# ==========================================================================
+#  SEGREDOS — nunca versionar
+# ==========================================================================
+.env
+.env.*
+!.env.example
 
-\.phpintel/
+# ==========================================================================
+#  Dependências (instaladas via `composer install` / build da imagem)
+# ==========================================================================
+/vendor/
+/node_modules/
+
+# Cache de templates do Fenom, se apontado para dentro do projeto
+/var/
+/cache/
+
+# ==========================================================================
+#  Editores / SO
+# ==========================================================================
+.phpintel/
 .idea/
 .vscode/
 
@@ -9,5 +28,10 @@
 ._*
 .Spotlight-V100
 .Trashes
+
+# Windows
 ehthumbs.db
 Thumbs.db
+
+# Logs
+*.log
