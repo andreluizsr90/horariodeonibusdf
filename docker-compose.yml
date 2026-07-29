@@ -3,8 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: horariodeonibusdf:latest
-    container_name: horariodeonibusdf
+    image: horariodeonibusdf:php-version-1.0
+    container_name: horariodeonibusdf_php
     restart: unless-stopped
     ports:
       - "8015:8080"
