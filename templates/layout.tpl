@@ -39,12 +39,12 @@
 
     <main id="conteudo" class="flex-1">
         {* Banner de topo — primeiro conteúdo abaixo do header. *}
-        <div class="container-page pt-4">{include 'partials/ad.tpl' slot='6961870453'}</div>
+        <div class="container-page pt-4" style="height: 250px;">{include 'partials/ad.tpl' slot='6961870453'}</div>
 
         {block 'conteudo'}{/block}
 
         {* Banner de rodapé — último conteúdo antes do footer. *}
-        <div class="container-page py-6">{include 'partials/ad.tpl' slot='5989010611'}</div>
+        <div class="container-page py-6" style="height: 250px;">{include 'partials/ad.tpl' slot='5989010611'}</div>
     </main>
 
     {include 'partials/footer.tpl'}
