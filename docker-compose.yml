@@ -7,7 +7,7 @@ services:
     container_name: horariodeonibusdf
     restart: unless-stopped
     ports:
-      - "3000:8080"
+      - "8015:8080"
     volumes:
       # Credenciais ficam fora da imagem — lidas em runtime.
       - ./.env:/var/www/html/.env:ro
